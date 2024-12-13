@@ -1,73 +1,77 @@
 package com.explorerquest.explorerquest.util;
 
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.function.Function;
+import java.util.logging.Logger;
+import java.util.Base64;
 
 @Component
 public class JwtUtil {
 
-    @Value("${jwt.secret}")
-    private String secretKey;
+    private static final Logger logger = Logger.getLogger(JwtUtil.class.getName());
 
-    private SecretKey getSigningKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(secretKey);
-        return Keys.hmacShaKeyFor(keyBytes);
+    private SecretKey secretKey;
+
+    @Value("${jwt.expiration.ms}")
+    private long jwtExpirationMs;
+
+    @Value("${jwt.secret}")
+    public void setJwtSecret(String jwtSecret) {
+        // Decodifica la chiave Base64 per ottenere la chiave valida
+        byte[] decodedKey = Base64.getDecoder().decode(jwtSecret);
+        this.secretKey = Keys.hmacShaKeyFor(decodedKey);
+        logger.info("JWT Util initialized with secret: [PROTECTED]");
+        logger.info("JWT Expiration (ms): " + jwtExpirationMs);
+    }
+
+    public String generateToken(String username) {
+        try {
+            return Jwts.builder()
+                    .setSubject(username)
+                    .setIssuedAt(new Date())
+                    .setExpiration(new Date(System.currentTimeMillis() + jwtExpirationMs))
+                    .signWith(secretKey, SignatureAlgorithm.HS512)
+                    .compact();
+        } catch (JwtException e) {
+            logger.severe("Error generating JWT token: " + e.getMessage());
+            throw e;
+        }
     }
 
     public String extractUsername(String token) {
-        return extractClaim(token, Claims::getSubject);
+        try {
+            return Jwts.parserBuilder()
+                    .setSigningKey(secretKey)
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody()
+                    .getSubject();
+        } catch (JwtException e) {
+            logger.severe("Error extracting username from token: " + e.getMessage());
+            throw e;
+        }
     }
 
-    public Date extractExpiration(String token) {
-        return extractClaim(token, Claims::getExpiration);
-    }
-
-    public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = extractAllClaims(token);
-        return claimsResolver.apply(claims);
-    }
-
-    private Claims extractAllClaims(String token) {
-        return Jwts.parserBuilder()
-                .setSigningKey(getSigningKey())
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
-    }
-
-    private Boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
-    }
-
-    public String generateToken(UserDetails userDetails) {
-        Map<String, Object> claims = new HashMap<>();
-        return createToken(claims, userDetails.getUsername());
-    }
-
-    private String createToken(Map<String, Object> claims, String subject) {
-        return Jwts.builder()
-                .setClaims(claims)
-                .setSubject(subject)
-                .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60 * 10)) // Valido per 10 ore
-                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
-                .compact();
-    }
-
-    public Boolean validateToken(String token, UserDetails userDetails) {
-        final String username = extractUsername(token);
-        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+    public boolean validateToken(String token) {
+        try {
+            Jwts.parserBuilder().setSigningKey(secretKey).build().parseClaimsJws(token);
+            return true;
+        } catch (ExpiredJwtException e) {
+            logger.warning("JWT token is expired: " + e.getMessage());
+        } catch (UnsupportedJwtException e) {
+            logger.warning("JWT token is unsupported: " + e.getMessage());
+        } catch (MalformedJwtException e) {
+            logger.warning("JWT token is malformed: " + e.getMessage());
+        } catch (SignatureException e) {
+            logger.warning("JWT token signature validation failed: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            logger.warning("JWT token is empty or null: " + e.getMessage());
+        }
+        return false;
     }
 }
