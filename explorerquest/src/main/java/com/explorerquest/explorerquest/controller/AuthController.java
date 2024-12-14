@@ -28,7 +28,6 @@ public class AuthController {
         this.jwtUtil = jwtUtil;
     }
 
-    // Endpoint per la registrazione di un nuovo utente
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody UserRegistrationDto userRegistrationDto) {
         if (userRepository.findByUsername(userRegistrationDto.getUsername()).isPresent() ||
@@ -49,10 +48,9 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "User registered successfully!"));
     }
 
-    // Endpoint per il login
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody UserLoginDto loginRequest) {
-        Optional<User> optionalUser = userRepository.findByUsername(loginRequest.getUsername());
+        Optional<User> optionalUser = userRepository.findByUsernameOrEmail(loginRequest.getUsername(), loginRequest.getUsername());
         if (optionalUser.isEmpty()) {
             return ResponseEntity.status(401).body(Map.of("message", "Invalid username or password"));
         }
@@ -67,27 +65,25 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("token", token));
     }
 
-    // Endpoint per ottenere i dati dell'utente loggato
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(@RequestHeader("Authorization") String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             return ResponseEntity.status(401).body(Map.of("message", "Missing or invalid token"));
         }
 
-        String token = authHeader.substring(7); // Rimuove "Bearer "
+        String token = authHeader.substring(7);
         String username = jwtUtil.extractUsername(token);
         if (username == null) {
             return ResponseEntity.status(401).body(Map.of("message", "Invalid token"));
         }
 
-        Optional<User> optionalUser = userRepository.findByUsername(username);
+        Optional<User> optionalUser = userRepository.findByUsernameOrEmail(username, username);
         if (optionalUser.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("message", "User not found"));
         }
 
         User user = optionalUser.get();
 
-        // Crea la mappa manualmente per gestire valori null
         Map<String, Object> userDetails = new HashMap<>();
         userDetails.put("id", user.getId());
         userDetails.put("username", user.getUsername() != null ? user.getUsername() : "");
@@ -101,14 +97,12 @@ public class AuthController {
         return ResponseEntity.ok(userDetails);
     }
 
-    // Endpoint per ottenere la lista di tutti gli utenti
     @GetMapping("/users")
     public ResponseEntity<List<User>> getAllUsers() {
         List<User> users = userRepository.findAll();
         return ResponseEntity.ok(users);
     }
 
-    // Endpoint per eliminare un utente
     @DeleteMapping("/users/{id}")
     public ResponseEntity<?> deleteUser(@PathVariable Long id) {
         Optional<User> userOptional = userRepository.findById(id);
@@ -120,7 +114,6 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "User deleted successfully"));
     }
 
-    // Endpoint per modificare un utente
     @PutMapping("/users/{id}")
     public ResponseEntity<?> updateUser(@PathVariable Long id, @RequestBody User updatedUser) {
         Optional<User> userOptional = userRepository.findById(id);
@@ -130,7 +123,6 @@ public class AuthController {
 
         User existingUser = userOptional.get();
 
-        // Aggiorna i campi modificabili
         if (updatedUser.getUsername() != null) existingUser.setUsername(updatedUser.getUsername());
         if (updatedUser.getEmail() != null) existingUser.setEmail(updatedUser.getEmail());
         if (updatedUser.getPassword() != null) {

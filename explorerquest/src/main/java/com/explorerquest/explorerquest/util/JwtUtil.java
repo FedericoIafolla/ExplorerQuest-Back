@@ -22,7 +22,6 @@ public class JwtUtil {
 
     @Value("${jwt.secret}")
     public void setJwtSecret(String jwtSecret) {
-        // Decodifica la chiave Base64 per ottenere la chiave valida
         byte[] decodedKey = Base64.getDecoder().decode(jwtSecret);
         this.secretKey = Keys.hmacShaKeyFor(decodedKey);
         logger.info("JWT Util initialized with secret: [PROTECTED]");
